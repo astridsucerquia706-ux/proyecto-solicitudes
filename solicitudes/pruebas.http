@@ -1,0 +1,302 @@
+### =====================================================================
+### PRUEBAS DE LA API - SOLICITUDES ESTUDIANTILES (Astrid Yulieth Sucerquia)
+### Ejecutar con la extensión REST Client de VS Code, EN ORDEN, después de:
+###   php artisan migrate:fresh --seed
+### Todas las cuentas de prueba usan la contraseña: clave123
+### =====================================================================
+
+### --- SESIÓN Y SEGURIDAD (RF-01, RNF-01) ---
+
+### Prueba 1: consultar sin iniciar sesión (esperado 401)
+GET http://127.0.0.1:8000/api/student/history
+Accept: application/json
+
+### Prueba 2: login con contraseña incorrecta (esperado 401)
+POST http://127.0.0.1:8000/api/login
+Content-Type: application/json
+Accept: application/json
+
+{
+  "email": "laura.gomez@pascualbravo.test",
+  "password": "otraClave"
+}
+
+### Prueba 3: login de la estudiante Laura (esperado 200 con token)
+# @name loginEstudiante
+POST http://127.0.0.1:8000/api/login
+Content-Type: application/json
+Accept: application/json
+
+{
+  "email": "laura.gomez@pascualbravo.test",
+  "password": "clave123"
+}
+
+###
+@tokenEst = {{loginEstudiante.response.body.token}}
+
+### Prueba 4: login del docente Carlos (esperado 200 con token)
+# @name loginDocente
+POST http://127.0.0.1:8000/api/login
+Content-Type: application/json
+Accept: application/json
+
+{
+  "email": "docente1@pascualbravo.test",
+  "password": "clave123"
+}
+
+###
+@tokenDoc = {{loginDocente.response.body.token}}
+
+### Prueba 5: la estudiante intenta entrar a una ruta del docente (esperado 403)
+GET http://127.0.0.1:8000/api/teacher/requests
+Accept: application/json
+Authorization: Bearer {{tokenEst}}
+
+
+### --- DATOS DEL ESTUDIANTE (RF-02) ---
+
+### Prueba 6: consultar mis datos (esperado 200)
+GET http://127.0.0.1:8000/api/student/profile
+Accept: application/json
+Authorization: Bearer {{tokenEst}}
+
+### Prueba 7: estrato fuera de rango (esperado 400)
+PUT http://127.0.0.1:8000/api/student/profile
+Content-Type: application/json
+Accept: application/json
+Authorization: Bearer {{tokenEst}}
+
+{
+  "phone": "3001112233",
+  "stratum": 9
+}
+
+### Prueba 8: actualizar teléfono y ciudad (esperado 200)
+PUT http://127.0.0.1:8000/api/student/profile
+Content-Type: application/json
+Accept: application/json
+Authorization: Bearer {{tokenEst}}
+
+{
+  "phone": "3009998877",
+  "address": "Calle 50 # 40-20",
+  "birth_date": "2005-03-14",
+  "gender": "Femenino",
+  "stratum": 2,
+  "city": "Bello"
+}
+
+
+### --- HISTORIAL Y PRERREQUISITOS (RF-03, RF-04) ---
+
+### Prueba 9: historial académico con promedio (esperado 200)
+GET http://127.0.0.1:8000/api/student/history
+Accept: application/json
+Authorization: Bearer {{tokenEst}}
+
+### Prueba 10: materias pendientes (esperado 200; Bases de Datos II bloqueada)
+GET http://127.0.0.1:8000/api/student/pending-subjects
+Accept: application/json
+Authorization: Bearer {{tokenEst}}
+
+
+### --- ACTIVIDADES (RF-05) ---
+
+### Prueba 11: registrar actividad con fecha futura (esperado 400)
+POST http://127.0.0.1:8000/api/student/activities
+Content-Type: application/json
+Accept: application/json
+Authorization: Bearer {{tokenEst}}
+
+{
+  "activity_type_id": 1,
+  "name": "Congreso Nacional de Software",
+  "date": "2030-01-01"
+}
+
+### Prueba 12: registrar actividad válida (esperado 201)
+POST http://127.0.0.1:8000/api/student/activities
+Content-Type: application/json
+Accept: application/json
+Authorization: Bearer {{tokenEst}}
+
+{
+  "activity_type_id": 1,
+  "name": "Congreso Nacional de Software",
+  "date": "2026-10-15",
+  "description": "Asistente"
+}
+
+
+### --- SOLICITUDES DEL ESTUDIANTE (RF-06) ---
+### Laura tiene matriculadas en 2026-2: POO (matrícula 7), Cálculo Integral (8), Bases de Datos I (9), Álgebra Lineal (10) e Inglés I (11).
+### Cálculo Integral ya tiene una solicitud pendiente (la crea el seeder).
+
+### Prueba 13: materias que se pueden cancelar (esperado 200; no aparece Cálculo Integral)
+GET http://127.0.0.1:8000/api/student/cancelable-enrollments
+Accept: application/json
+Authorization: Bearer {{tokenEst}}
+
+### Prueba 14: motivo demasiado corto (esperado 400)
+POST http://127.0.0.1:8000/api/student/requests
+Content-Type: application/json
+Accept: application/json
+Authorization: Bearer {{tokenEst}}
+
+{
+  "enrollment_id": 7,
+  "reason": "corto"
+}
+
+### Prueba 15: cancelar una materia ya aprobada (esperado 400, lo detiene el trigger)
+POST http://127.0.0.1:8000/api/student/requests
+Content-Type: application/json
+Accept: application/json
+Authorization: Bearer {{tokenEst}}
+
+{
+  "enrollment_id": 1,
+  "reason": "Quiero cancelar Fundamentos de Programación"
+}
+
+### Prueba 16: segunda solicitud pendiente para la misma materia (esperado 400, trigger)
+POST http://127.0.0.1:8000/api/student/requests
+Content-Type: application/json
+Accept: application/json
+Authorization: Bearer {{tokenEst}}
+
+{
+  "enrollment_id": 8,
+  "reason": "Insisto en cancelar Cálculo Integral"
+}
+
+### Prueba 17: solicitud válida para Bases de Datos I (esperado 201, estado pendiente)
+POST http://127.0.0.1:8000/api/student/requests
+Content-Type: application/json
+Accept: application/json
+Authorization: Bearer {{tokenEst}}
+
+{
+  "enrollment_id": 9,
+  "reason": "Tengo cruce de horario con mi trabajo los martes y jueves."
+}
+
+### Prueba 18: mis solicitudes con su estado (esperado 200)
+GET http://127.0.0.1:8000/api/student/requests
+Accept: application/json
+Authorization: Bearer {{tokenEst}}
+
+
+### --- GESTIÓN DEL DOCENTE (RF-07) ---
+### Solicitudes del seeder: 1 Laura (pendiente), 2 Andrés (aprobada), 3 Santiago (rechazada), 4 Camila (pendiente)
+### La prueba 17 crea la solicitud 5.
+
+### Prueba 19: solicitudes pendientes (esperado 200)
+GET http://127.0.0.1:8000/api/teacher/requests?status=pendiente
+Accept: application/json
+Authorization: Bearer {{tokenDoc}}
+
+### Prueba 20: buscar solicitudes de un estudiante por documento (esperado 200)
+GET http://127.0.0.1:8000/api/teacher/requests?q=1001234567
+Accept: application/json
+Authorization: Bearer {{tokenDoc}}
+
+### Prueba 21: aprobar sin observación (esperado 400)
+PATCH http://127.0.0.1:8000/api/teacher/requests/5/decide
+Content-Type: application/json
+Accept: application/json
+Authorization: Bearer {{tokenDoc}}
+
+{
+  "decision": "aprobada"
+}
+
+### Prueba 22: aprobar la solicitud 5 (esperado 200; la matrícula 9 pasa a cancelada)
+PATCH http://127.0.0.1:8000/api/teacher/requests/5/decide
+Content-Type: application/json
+Accept: application/json
+Authorization: Bearer {{tokenDoc}}
+
+{
+  "decision": "aprobada",
+  "observation": "Se aprueba: el cruce de horario está justificado."
+}
+
+### Prueba 23: intentar cambiar una solicitud ya resuelta (esperado 400, procedimiento/trigger)
+PATCH http://127.0.0.1:8000/api/teacher/requests/5/decide
+Content-Type: application/json
+Accept: application/json
+Authorization: Bearer {{tokenDoc}}
+
+{
+  "decision": "rechazada",
+  "observation": "Cambio de opinión"
+}
+
+### Prueba 24: detalle de la solicitud 5 con su historial de seguimiento (esperado 200)
+GET http://127.0.0.1:8000/api/teacher/requests/5
+Accept: application/json
+Authorization: Bearer {{tokenDoc}}
+
+### Prueba 25: rechazar la solicitud 4 de Camila (esperado 200)
+PATCH http://127.0.0.1:8000/api/teacher/requests/4/decide
+Content-Type: application/json
+Accept: application/json
+Authorization: Bearer {{tokenDoc}}
+
+{
+  "decision": "rechazada",
+  "observation": "Debe adjuntar la incapacidad médica en Admisiones y Registro."
+}
+
+### Prueba 26: solicitud que no existe (esperado 404)
+GET http://127.0.0.1:8000/api/teacher/requests/999
+Accept: application/json
+Authorization: Bearer {{tokenDoc}}
+
+### Prueba 27: buscar estudiantes por nombre (esperado 200)
+GET http://127.0.0.1:8000/api/teacher/students?q=Laura
+Accept: application/json
+Authorization: Bearer {{tokenDoc}}
+
+### Prueba 28: información consolidada de un estudiante (esperado 200)
+GET http://127.0.0.1:8000/api/teacher/students/1
+Accept: application/json
+Authorization: Bearer {{tokenDoc}}
+
+
+### --- REPORTES (RF-08) ---
+
+### Prueba 29: solicitudes por estado (procedimiento almacenado) (esperado 200)
+GET http://127.0.0.1:8000/api/teacher/reports/requests
+Accept: application/json
+Authorization: Bearer {{tokenDoc}}
+
+### Prueba 30: promedio por programa (procedimiento con cursor) (esperado 200)
+GET http://127.0.0.1:8000/api/teacher/reports/averages
+Accept: application/json
+Authorization: Bearer {{tokenDoc}}
+
+### Prueba 31: participación en actividades (esperado 200)
+GET http://127.0.0.1:8000/api/teacher/reports/activities
+Accept: application/json
+Authorization: Bearer {{tokenDoc}}
+
+### Prueba 32: exportar el reporte de solicitudes a CSV (esperado 200 con el CSV)
+GET http://127.0.0.1:8000/api/teacher/reports/export/solicitudes
+Authorization: Bearer {{tokenDoc}}
+
+
+### --- CERRAR SESIÓN ---
+
+### Prueba 33: cerrar sesión (esperado 200)
+POST http://127.0.0.1:8000/api/logout
+Accept: application/json
+Authorization: Bearer {{tokenEst}}
+
+### Prueba 34: usar el token después de cerrar sesión (esperado 401)
+GET http://127.0.0.1:8000/api/student/history
+Accept: application/json
+Authorization: Bearer {{tokenEst}}
